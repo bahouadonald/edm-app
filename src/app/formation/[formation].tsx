@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 
 import { ActionButton, BrandHeader, Card, Heading, LoadingState, Notice, Screen } from '@/components/edm-ui';
+import { ModuleAudioPlayer } from '@/components/module-audio-player';
 import { RequireAuth } from '@/components/require-auth';
 import { EDM, FORMATION_CARDS, FORMATION_WEEKS } from '@/constants/edm';
 import { useAuth } from '@/contexts/auth-context';
@@ -24,7 +25,14 @@ type ModuleRow = {
   sous_titre: string | null;
   texte: string | null;
   audio_url: string | null;
+  objectifs: string | null;
+  resume: string | null;
+  pratique: string | null;
+  bilan_points: string | null;
+  fin_de_semaine: boolean | null;
 };
+type Choice = 'a' | 'b' | 'c' | 'd';
+type Bilan = 'acquis' | 'en_cours' | 'a_travailler';
 type QuestionRow = {
   id: string;
   ordre: number;
@@ -32,12 +40,20 @@ type QuestionRow = {
   option_a: string;
   option_b: string;
   option_c: string;
-  bonne_reponse: 'a' | 'b' | 'c';
+  option_d: string | null;
+  bonne_reponse: Choice;
+  explication: string | null;
 };
-type ModuleProgress = { module_id: string; ecoute: boolean; quiz_reussi: boolean; score: number | null };
+type ModuleProgress = { module_id: string; ecoute: boolean; quiz_reussi: boolean; score: number | null; bilan?: Bilan | null };
 type WeekProgress = { semaine: number; step: string; validated: boolean };
 type Enrollment = { user_id: string; zoom_dispo: string; engagement: boolean };
-type ModuleStage = 'intro' | 'quiz' | 'done';
+type ModuleStage = 'intro' | 'quiz' | 'pratique' | 'done';
+
+const BILAN_CHOICES: { key: Bilan; emoji: string; label: string; hint: string }[] = [
+  { key: 'acquis', emoji: '✅', label: 'Acquis', hint: 'Je maîtrise bien' },
+  { key: 'en_cours', emoji: '⏳', label: 'En cours', hint: 'Je comprends mais je dois approfondir' },
+  { key: 'a_travailler', emoji: '🔄', label: 'À travailler', hint: 'Je dois revenir dessus plus tard' },
+];
 
 const validFormations: FormationType[] = ['formation', 'saison', 'spirituel'];
 const zoomChoices = ['Oui, je suis disponible', 'Oui, selon mon horaire'];
@@ -75,7 +91,7 @@ function FormationContent() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [questionAnswered, setQuestionAnswered] = useState(false);
   const [stage, setStage] = useState<ModuleStage>('intro');
-  const [answers, setAnswers] = useState<Record<string, 'a' | 'b' | 'c'>>({});
+  const [answers, setAnswers] = useState<Record<string, Choice>>({});
   const [result, setResult] = useState<{ score: number; correct: number; passed: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const [moduleError, setModuleError] = useState('');
@@ -95,13 +111,13 @@ function FormationContent() {
       const [modulesResult, progressResult, weeksResult, enrollmentResult] = await Promise.all([
         supabase
           .from('formation_modules')
-          .select('id,formation,numero,partie,semaine,semaine_titre,titre,sous_titre,texte,audio_url')
+          .select('id,formation,numero,partie,semaine,semaine_titre,titre,sous_titre,texte,audio_url,objectifs,resume,pratique,bilan_points,fin_de_semaine')
           .eq('formation', formation)
           .eq('actif', true)
           .order('numero', { ascending: true }),
         supabase
           .from('formation_module_progression')
-          .select('module_id,ecoute,quiz_reussi,score')
+          .select('module_id,ecoute,quiz_reussi,score,bilan')
           .eq('user_id', user.id),
         formation === 'formation'
           ? supabase.from('formation_progression').select('semaine,step,validated').eq('user_id', user.id)
@@ -150,7 +166,7 @@ function FormationContent() {
     setStage(progress[module.id]?.quiz_reussi ? 'done' : progress[module.id]?.ecoute ? 'quiz' : 'intro');
     const { data, error } = await supabase
       .from('formation_questions')
-      .select('id,ordre,question,option_a,option_b,option_c,bonne_reponse')
+      .select('id,ordre,question,option_a,option_b,option_c,option_d,bonne_reponse,explication')
       .eq('module_id', module.id)
       .order('ordre', { ascending: true });
     if (error) setModuleError('Impossible de charger les questions de ce module.');
@@ -202,7 +218,29 @@ function FormationContent() {
         [activeModule.id]: { module_id: activeModule.id, ecoute: true, quiz_reussi: passed, score },
       }));
       setResult({ score, correct, passed });
-      if (passed) setStage('done');
+      if (passed) setStage(activeModule.pratique ? 'pratique' : 'done');
+    }
+    setSaving(false);
+  };
+
+  const saveBilan = async (bilan: Bilan) => {
+    if (!user || !activeModule) return;
+    void Haptics.selectionAsync();
+    setSaving(true);
+    setModuleError('');
+    const { error } = await supabase.from('formation_module_progression').upsert({
+      user_id: user.id,
+      module_id: activeModule.id,
+      bilan,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,module_id' });
+    if (error) setModuleError(error.message);
+    else {
+      setProgress((current) => ({
+        ...current,
+        [activeModule.id]: { ...current[activeModule.id], module_id: activeModule.id, bilan } as ModuleProgress,
+      }));
+      setStage('done');
     }
     setSaving(false);
   };
@@ -248,14 +286,23 @@ function FormationContent() {
         {questionsLoading ? <LoadingState label="Chargement du questionnaire..." /> : null}
         {moduleError ? <Notice tone="red"><Text style={styles.body}>{moduleError}</Text></Notice> : null}
         {stage === 'intro' ? (
-          <Card>
-            <Text style={styles.contentLabel}>Contenu du module</Text>
-            {activeModule.texte ? <Text style={styles.moduleText}>{activeModule.texte}</Text> : <Text style={styles.body}>{activeModule.sous_titre ?? activeModule.titre}</Text>}
-            {activeModule.audio_url ? (
-              <Notice><Text style={styles.body}>La lecture audio sera ajoutée dans une prochaine phase.</Text></Notice>
+          <>
+            {activeModule.objectifs ? (
+              <Section icon="🎯" title="1. Objectifs du module"><Text style={styles.moduleText}>{activeModule.objectifs}</Text></Section>
             ) : null}
-            <ActionButton label="J'ai consulté le contenu — commencer le questionnaire" onPress={() => void startQuiz()} disabled={saving || questionsLoading} />
-          </Card>
+            {activeModule.audio_url ? (
+              <ModuleAudioPlayer uri={activeModule.audio_url} title={activeModule.titre} />
+            ) : (
+              <Notice><Text style={styles.body}>🎧 L&apos;enseignement audio de ce module sera bientôt disponible. Tu peux déjà lire le contenu ci-dessous.</Text></Notice>
+            )}
+            <Section icon="📖" title={activeModule.objectifs ? '2. Contenu de la formation' : 'Contenu du module'}>
+              {activeModule.texte ? <Text style={styles.moduleText}>{activeModule.texte}</Text> : <Text style={styles.body}>{activeModule.sous_titre ?? activeModule.titre}</Text>}
+            </Section>
+            {activeModule.resume ? (
+              <Section icon="📝" title="3. Résumé des acquis"><Text style={styles.moduleText}>{activeModule.resume}</Text></Section>
+            ) : null}
+            <ActionButton label={activeModule.objectifs ? "4. Passer à l'exercice" : "J'ai consulté le contenu — commencer le questionnaire"} onPress={() => void startQuiz()} disabled={saving || questionsLoading} />
+          </>
         ) : null}
         {stage === 'quiz' ? (
           <>
@@ -280,7 +327,8 @@ function FormationContent() {
                       ['a', question.option_a],
                       ['b', question.option_b],
                       ['c', question.option_c],
-                    ] as const).map(([answer, label], index) => {
+                      ...(question.option_d ? [['d', question.option_d] as const] : []),
+                    ] as [Choice, string][]).map(([answer, label], index) => {
                       const selected = chosen === answer;
                       const correctAnswer = questionAnswered && answer === question.bonne_reponse;
                       const incorrectAnswer = questionAnswered && selected && answer !== question.bonne_reponse;
@@ -317,6 +365,7 @@ function FormationContent() {
                           {answerIsCorrect ? 'Bonne réponse' : 'Pas tout à fait'}
                         </Text>
                         {!answerIsCorrect ? <Text style={styles.body}>La bonne réponse est {question.bonne_reponse.toUpperCase()}.</Text> : null}
+                        {question.explication ? <Text style={styles.body}>{question.explication}</Text> : null}
                       </Animated.View>
                     ) : null}
                   </Card>
@@ -351,12 +400,35 @@ function FormationContent() {
             )}
           </>
         ) : null}
+        {stage === 'pratique' ? (
+          <>
+            <Notice tone="green"><Text style={styles.body}>Exercice réussi ! Il reste à mettre ce module en pratique et à faire ton bilan.</Text></Notice>
+            <Section icon="🔧" title="5. Travail pratique — à mettre en œuvre"><Text style={styles.moduleText}>{activeModule.pratique}</Text></Section>
+            <Section icon="📊" title="6. Bilan personnel — ce que j'ai acquis">
+              <Text style={styles.body}>Où en es-tu avec ce module ?</Text>
+              {activeModule.bilan_points ? <Text style={styles.bilanHint}>{activeModule.bilan_points.split('\n').filter((line) => line.trim().startsWith('(')).join(' ')}</Text> : null}
+              <View style={styles.bilanList}>
+                {BILAN_CHOICES.map((choice) => (
+                  <Pressable key={choice.key} disabled={saving} onPress={() => void saveBilan(choice.key)} style={[styles.bilanChoice, progress[activeModule.id]?.bilan === choice.key && styles.bilanChoiceSelected]}>
+                    <Text style={styles.bilanEmoji}>{choice.emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bilanLabel}>{choice.label}</Text>
+                      <Text style={styles.body}>{choice.hint}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </Section>
+          </>
+        ) : null}
         {stage === 'done' ? (
           <Card style={styles.doneCard}>
             <SymbolView name={{ ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' }} tintColor={EDM.green} size={42} />
-            <Text style={styles.doneTitle}>Module validé</Text>
+            <Text style={styles.doneTitle}>{activeModule.fin_de_semaine ? '✅ Passage à la semaine suivante' : '✅ Passage au module suivant'}</Text>
             <Text style={styles.body}>Ta progression est enregistrée et partagée avec le site EDM.</Text>
-            {progress[activeModule.id]?.score !== null ? <Text style={styles.savedScore}>Dernier score : {progress[activeModule.id]?.score}%</Text> : null}
+            {progress[activeModule.id]?.score !== null && progress[activeModule.id]?.score !== undefined ? <Text style={styles.savedScore}>Dernier score : {progress[activeModule.id]?.score}%</Text> : null}
+            {activeModule.pratique ? <ActionButton label="Revoir le travail pratique" secondary onPress={() => setStage('pratique')} /> : null}
+            <ActionButton label="Relire le module" secondary onPress={() => setStage('intro')} />
             <ActionButton label="Continuer la formation" onPress={closeModule} />
           </Card>
         ) : null}
@@ -590,7 +662,31 @@ function RegistrationForm({
   );
 }
 
+function Section({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  return (
+    <Animated.View entering={FadeInDown.duration(260)}>
+      <Card style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionIcon}>{icon}</Text>
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+        {children}
+      </Card>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
+  section: { gap: 10 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: EDM.border },
+  sectionIcon: { fontSize: 22 },
+  sectionTitle: { flex: 1, color: EDM.redDark, fontSize: 16, fontWeight: '800' },
+  bilanHint: { color: EDM.textMuted, fontSize: 13, fontStyle: 'italic', lineHeight: 19 },
+  bilanList: { gap: 10, marginTop: 4 },
+  bilanChoice: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: EDM.border, backgroundColor: EDM.cream },
+  bilanChoiceSelected: { borderColor: EDM.gold, backgroundColor: EDM.goldLight },
+  bilanEmoji: { fontSize: 26 },
+  bilanLabel: { color: EDM.text, fontSize: 15, fontWeight: '800' },
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32 },
   backText: { color: EDM.textMuted, fontSize: 12, fontWeight: '700' },
   progressHeader: { gap: 8, padding: 14, borderRadius: 13, backgroundColor: EDM.white },

@@ -3,6 +3,8 @@ import type { Href } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 
 import { ActionButton, BrandHeader, Card, Heading, LoadingState, Notice, Screen } from '@/components/edm-ui';
 import { RequireAuth } from '@/components/require-auth';
@@ -70,6 +72,8 @@ function FormationContent() {
   const [activeModule, setActiveModule] = useState<ModuleRow | null>(null);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [questionAnswered, setQuestionAnswered] = useState(false);
   const [stage, setStage] = useState<ModuleStage>('intro');
   const [answers, setAnswers] = useState<Record<string, 'a' | 'b' | 'c'>>({});
   const [result, setResult] = useState<{ score: number; correct: number; passed: boolean } | null>(null);
@@ -79,6 +83,8 @@ function FormationContent() {
   const [engaged, setEngaged] = useState(false);
   const [registrationError, setRegistrationError] = useState('');
   const [registering, setRegistering] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const course = FORMATION_CARDS.find((item) => item.key === formation);
 
@@ -115,11 +121,12 @@ function FormationContent() {
       setEnrollment((enrollmentResult.data ?? null) as Enrollment | null);
       setCheckingEnrollment(false);
       setLoading(false);
+      setRefreshing(false);
     };
 
     void load();
     return () => { mounted = false; };
-  }, [formation, user]);
+  }, [formation, refreshKey, user]);
 
   const doneCount = useMemo(() => modules.filter((module) => progress[module.id]?.quiz_reussi).length, [modules, progress]);
 
@@ -131,10 +138,13 @@ function FormationContent() {
   const isDone = (module: ModuleRow) => Boolean(progress[module.id]?.quiz_reussi);
 
   const openModule = async (module: ModuleRow) => {
+    void Haptics.selectionAsync();
     setActiveModule(module);
     setQuestions([]);
     setAnswers({});
     setResult(null);
+    setCurrentQuestionIndex(0);
+    setQuestionAnswered(false);
     setModuleError('');
     setQuestionsLoading(true);
     setStage(progress[module.id]?.quiz_reussi ? 'done' : progress[module.id]?.ecoute ? 'quiz' : 'intro');
@@ -228,7 +238,7 @@ function FormationContent() {
   if (!formation || !course) return null;
   if (activeModule) {
     return (
-      <Screen>
+      <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}>
         <BrandHeader />
         <Pressable onPress={closeModule} style={styles.backButton}>
           <SymbolView name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }} tintColor={EDM.textMuted} size={16} />
@@ -249,49 +259,94 @@ function FormationContent() {
         ) : null}
         {stage === 'quiz' ? (
           <>
-            <Notice>
-              <Text style={styles.body}>Réponds aux {questions.length} questions. Il faut au moins 70 % de bonnes réponses pour valider le module.</Text>
-            </Notice>
-            {questions.map((question, index) => (
-              <Card key={question.id}>
-                <Text style={styles.questionTitle}>{index + 1}. {question.question}</Text>
-                {([
-                  ['a', question.option_a],
-                  ['b', question.option_b],
-                  ['c', question.option_c],
-                ] as const).map(([answer, label]) => {
-                  const selected = answers[question.id] === answer;
-                  const correctAnswer = Boolean(result) && answer === question.bonne_reponse;
-                  const incorrectAnswer = Boolean(result) && selected && answer !== question.bonne_reponse;
-                  return (
-                    <Pressable
-                      key={answer}
-                      disabled={Boolean(result)}
-                      onPress={() => setAnswers((current) => ({ ...current, [question.id]: answer }))}
-                      style={[
-                        styles.answer,
-                        selected && styles.answerSelected,
-                        correctAnswer && styles.answerCorrect,
-                        incorrectAnswer && styles.answerIncorrect,
-                      ]}>
-                      <Text style={styles.answerText}>{label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </Card>
-            ))}
+            <View style={styles.questionProgressBlock}>
+              <View style={styles.progressCaption}>
+                <Text style={styles.body}>Question {Math.min(currentQuestionIndex + 1, questions.length)} sur {questions.length}</Text>
+                <Text style={styles.progressCount}>Seuil : 70 %</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${questions.length ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0}%` }]} />
+              </View>
+            </View>
+            {questions[currentQuestionIndex] ? (() => {
+              const question = questions[currentQuestionIndex];
+              const chosen = answers[question.id];
+              const answerIsCorrect = chosen === question.bonne_reponse;
+              return (
+                <Animated.View key={question.id} entering={FadeInDown.duration(240)}>
+                  <Card style={styles.questionCard}>
+                    <Text style={styles.questionTitle}>{question.question}</Text>
+                    {([
+                      ['a', question.option_a],
+                      ['b', question.option_b],
+                      ['c', question.option_c],
+                    ] as const).map(([answer, label], index) => {
+                      const selected = chosen === answer;
+                      const correctAnswer = questionAnswered && answer === question.bonne_reponse;
+                      const incorrectAnswer = questionAnswered && selected && answer !== question.bonne_reponse;
+                      return (
+                        <Animated.View key={answer} entering={FadeInDown.delay(index * 45).duration(200)}>
+                          <Pressable
+                            disabled={questionAnswered || saving}
+                            onPress={() => {
+                              setAnswers((current) => ({ ...current, [question.id]: answer }));
+                              setQuestionAnswered(true);
+                              void Haptics.notificationAsync(answer === question.bonne_reponse
+                                ? Haptics.NotificationFeedbackType.Success
+                                : Haptics.NotificationFeedbackType.Error);
+                            }}
+                            style={[
+                              styles.answer,
+                              selected && styles.answerSelected,
+                              correctAnswer && styles.answerCorrect,
+                              incorrectAnswer && styles.answerIncorrect,
+                            ]}>
+                            <View style={[styles.answerLetter, selected && styles.answerLetterSelected]}>
+                              <Text style={[styles.answerLetterText, selected && styles.answerLetterTextSelected]}>{answer.toUpperCase()}</Text>
+                            </View>
+                            <Text style={styles.answerText}>{label}</Text>
+                            {correctAnswer ? <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} tintColor={EDM.green} size={21} /> : null}
+                            {incorrectAnswer ? <SymbolView name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }} tintColor={EDM.red} size={21} /> : null}
+                          </Pressable>
+                        </Animated.View>
+                      );
+                    })}
+                    {questionAnswered ? (
+                      <Animated.View entering={ZoomIn.duration(220)} style={[styles.answerFeedback, answerIsCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect]}>
+                        <Text style={[styles.feedbackTitle, { color: answerIsCorrect ? EDM.green : EDM.red }]}>
+                          {answerIsCorrect ? 'Bonne réponse' : 'Pas tout à fait'}
+                        </Text>
+                        {!answerIsCorrect ? <Text style={styles.body}>La bonne réponse est {question.bonne_reponse.toUpperCase()}.</Text> : null}
+                      </Animated.View>
+                    ) : null}
+                  </Card>
+                </Animated.View>
+              );
+            })() : null}
             {questions.length === 0 && !questionsLoading ? <Notice tone="red"><Text style={styles.body}>Aucune question n&apos;est disponible pour ce module.</Text></Notice> : null}
             {result ? (
               <Notice tone={result.passed ? 'green' : 'red'}>
                 <Text style={styles.resultScore}>{result.score}%</Text>
                 <Text style={styles.body}>{result.correct} bonnes réponses sur {questions.length}. {result.passed ? 'Module validé.' : 'Il en faut 70 % pour valider. Tu peux modifier tes réponses et réessayer.'}</Text>
-                {!result.passed ? <ActionButton label="Réessayer" secondary onPress={() => { setAnswers({}); setResult(null); }} /> : null}
+                {!result.passed ? <ActionButton label="Réessayer" secondary onPress={() => { setAnswers({}); setResult(null); setCurrentQuestionIndex(0); setQuestionAnswered(false); }} /> : null}
               </Notice>
+            ) : questionAnswered ? (
+              <ActionButton
+                label={currentQuestionIndex === questions.length - 1 ? 'Terminer le questionnaire' : 'Question suivante'}
+                onPress={() => {
+                  if (currentQuestionIndex === questions.length - 1) void submitQuiz();
+                  else {
+                    setCurrentQuestionIndex((index) => index + 1);
+                    setQuestionAnswered(false);
+                  }
+                }}
+                disabled={saving}
+              />
             ) : (
               <ActionButton
-                label={saving ? 'Enregistrement...' : Object.keys(answers).length < questions.length ? 'Réponds à toutes les questions' : 'Valider mes réponses'}
-                onPress={() => void submitQuiz()}
-                disabled={saving || questionsLoading || questions.length === 0 || Object.keys(answers).length !== questions.length}
+                label="Choisis une réponse"
+                onPress={() => undefined}
+                disabled
               />
             )}
           </>
@@ -328,7 +383,7 @@ function FormationContent() {
   const currentWeekComplete = currentWeekModules.length > 0 && currentWeekModules.every(isDone);
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}>
       <BrandHeader />
       <Pressable onPress={() => router.back()} style={styles.backButton}>
         <SymbolView name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }} tintColor={EDM.textMuted} size={16} />
@@ -517,7 +572,7 @@ function RegistrationForm({
       {zoomChoices.map((choice) => {
         const selected = availability === choice;
         return (
-          <Pressable key={choice} onPress={() => onAvailabilityChange(choice)} style={styles.choiceRow}>
+          <Pressable key={choice} onPress={() => { void Haptics.selectionAsync(); onAvailabilityChange(choice); }} style={styles.choiceRow}>
             <View style={[styles.radio, selected && styles.radioSelected]} />
             <Text style={styles.choiceText}>{choice}</Text>
           </Pressable>
@@ -543,15 +598,25 @@ const styles = StyleSheet.create({
   progressCount: { color: EDM.gold, fontSize: 11, fontWeight: '800' },
   progressTrack: { height: 7, overflow: 'hidden', borderRadius: 5, backgroundColor: EDM.creamDark },
   progressFill: { height: '100%', borderRadius: 5, backgroundColor: EDM.red },
+  questionProgressBlock: { gap: 7, padding: 14, borderRadius: 13, backgroundColor: EDM.white },
   body: { color: EDM.textSecondary, fontSize: 12, lineHeight: 19 },
   contentLabel: { color: EDM.red, fontSize: 10, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
   moduleText: { color: EDM.textSecondary, fontSize: 13, lineHeight: 22 },
-  questionTitle: { color: EDM.text, fontSize: 14, fontWeight: '800', lineHeight: 21 },
-  answer: { padding: 12, borderRadius: 10, backgroundColor: EDM.creamDark, borderColor: 'transparent', borderWidth: 1 },
+  questionCard: { padding: 18, gap: 12 },
+  questionTitle: { color: EDM.text, fontSize: 18, fontWeight: '800', lineHeight: 26, marginBottom: 4 },
+  answer: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12, borderRadius: 12, backgroundColor: EDM.cream, borderColor: EDM.border, borderWidth: 1 },
   answerSelected: { backgroundColor: '#FBF5E8', borderColor: EDM.gold },
   answerCorrect: { backgroundColor: '#EEF6EF', borderColor: EDM.green },
   answerIncorrect: { backgroundColor: '#FDF0F1', borderColor: EDM.red },
-  answerText: { color: EDM.textSecondary, fontSize: 12, lineHeight: 18 },
+  answerLetter: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: EDM.creamDark },
+  answerLetterSelected: { backgroundColor: EDM.gold },
+  answerLetterText: { color: EDM.textMuted, fontSize: 11, fontWeight: '900' },
+  answerLetterTextSelected: { color: EDM.white },
+  answerText: { flex: 1, color: EDM.textSecondary, fontSize: 12, lineHeight: 18 },
+  answerFeedback: { gap: 4, padding: 12, borderRadius: 11, borderWidth: 1 },
+  feedbackCorrect: { backgroundColor: '#EEF6EF', borderColor: '#C8E0CA' },
+  feedbackIncorrect: { backgroundColor: '#FDF0F1', borderColor: '#EBC4CC' },
+  feedbackTitle: { fontSize: 13, fontWeight: '900' },
   resultScore: { color: EDM.red, fontSize: 24, fontWeight: '900' },
   doneCard: { alignItems: 'center', paddingVertical: 24 },
   doneTitle: { color: EDM.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },

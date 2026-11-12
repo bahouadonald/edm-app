@@ -8,9 +8,16 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: EDM.cream } }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 260,
+          contentStyle: { backgroundColor: EDM.cream },
+        }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="auth" />
+        <Stack.Screen name="profil" />
         <Stack.Screen name="formation/[formation]" />
       </Stack>
     </AuthProvider>

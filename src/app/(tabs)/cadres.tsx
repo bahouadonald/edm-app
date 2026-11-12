@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
 
 import { ActionButton, BrandHeader, Card, Heading, LoadingState, Notice, Screen } from '@/components/edm-ui';
 import { RequireAuth } from '@/components/require-auth';
@@ -24,6 +25,8 @@ function CadresContent() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -41,9 +44,10 @@ function CadresContent() {
       });
       setReady(allRequiredDone);
       setLoading(false);
+      setRefreshing(false);
     });
     return () => { mounted = false; };
-  }, [user]);
+  }, [refreshKey, user]);
 
   const submitDepartment = async () => {
     if (!user || !selectedDepartment) return;
@@ -59,7 +63,7 @@ function CadresContent() {
   };
 
   return (
-    <Screen>
+    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}>
       <BrandHeader />
       <Heading eyebrow="Parcours Disciples EDM" title="Formation des Cadres" />
       <View style={styles.requirementHeading}>
@@ -87,7 +91,10 @@ function CadresContent() {
               accessibilityRole="radio"
               accessibilityState={{ selected }}
               disabled={!ready || Boolean(profile?.dept_choisi)}
-              onPress={() => setSelectedDepartment(department.id)}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setSelectedDepartment(department.id);
+              }}
               style={({ pressed }) => [
                 styles.departmentPressable,
                 selected && styles.departmentSelected,

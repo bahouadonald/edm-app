@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import * as Haptics from 'expo-haptics';
 
 import { ActionButton, Screen } from '@/components/edm-ui';
 import { EDM } from '@/constants/edm';
@@ -78,10 +79,10 @@ export default function AuthScreen() {
           <Text style={styles.subtitle}>Élite Doniel Ministries</Text>
 
           <View style={styles.segment}>
-            <Pressable onPress={() => setMode('login')} style={[styles.segmentItem, mode === 'login' && styles.segmentSelected]}>
+            <Pressable onPress={() => { void Haptics.selectionAsync(); setMode('login'); }} style={[styles.segmentItem, mode === 'login' && styles.segmentSelected]}>
               <Text style={[styles.segmentText, mode === 'login' && styles.segmentTextSelected]}>Connexion</Text>
             </Pressable>
-            <Pressable onPress={() => setMode('register')} style={[styles.segmentItem, mode === 'register' && styles.segmentSelected]}>
+            <Pressable onPress={() => { void Haptics.selectionAsync(); setMode('register'); }} style={[styles.segmentItem, mode === 'register' && styles.segmentSelected]}>
               <Text style={[styles.segmentText, mode === 'register' && styles.segmentTextSelected]}>S&apos;inscrire</Text>
             </Pressable>
           </View>

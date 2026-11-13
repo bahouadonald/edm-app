@@ -61,6 +61,7 @@ export function HeroScreen({
 }>) {
   const insets = useSafeAreaInsets();
   return (
+    <View style={styles.root}>
     <ScrollView
       style={styles.root}
       contentContainerStyle={styles.scroll}
@@ -83,6 +84,9 @@ export function HeroScreen({
         {children}
       </Animated.View>
     </ScrollView>
+    {/* Bandeau fixe sous la barre d'état : le contenu ne passe plus sous l'heure et la batterie */}
+    <View pointerEvents="none" style={[styles.statusBackdrop, { height: insets.top }]} />
+    </View>
   );
 }
 
@@ -197,6 +201,7 @@ export function PrimaryButton({ label, icon, onPress, disabled }: { label: strin
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: EDM.cream },
+  statusBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#5E0012' },
   scroll: { paddingBottom: 110 },
   hero: { overflow: 'hidden' },
   illustrationWrap: { position: 'absolute', right: 0, top: 0, bottom: 0, width: '58%' },

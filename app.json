@@ -31,6 +31,14 @@
           "image": "./assets/images/edm-logo.png",
           "imageWidth": 180
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "EDM a besoin d'accéder à tes photos pour choisir ta photo de profil.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

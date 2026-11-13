@@ -12,6 +12,7 @@ export type Profile = {
   spirituel_validated?: boolean;
   dept_choisi?: string | null;
   dept_confirme?: string | null;
+  avatar_url?: string | null;
 };
 
 type AuthContextValue = {

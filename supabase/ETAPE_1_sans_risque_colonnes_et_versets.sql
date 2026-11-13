@@ -1,3 +1,28 @@
+-- =====================================================================
+-- EDM · ÉTAPE 1 (SANS RISQUE POUR LE SITE ACTUEL)
+-- Ajoute les nouvelles colonnes et la Méditation du jour.
+-- Ne modifie et ne supprime aucune donnée existante.
+-- À exécuter dans Supabase > SQL Editor (projet EDM-ECDV)
+-- =====================================================================
+BEGIN;
+-- 1. Nouvelles colonnes pour les 6 parties du module
+ALTER TABLE public.formation_modules ADD COLUMN IF NOT EXISTS objectifs TEXT;
+ALTER TABLE public.formation_modules ADD COLUMN IF NOT EXISTS resume TEXT;
+ALTER TABLE public.formation_modules ADD COLUMN IF NOT EXISTS pratique TEXT;
+ALTER TABLE public.formation_modules ADD COLUMN IF NOT EXISTS bilan_points TEXT;
+ALTER TABLE public.formation_modules ADD COLUMN IF NOT EXISTS fin_de_semaine BOOLEAN NOT NULL DEFAULT false;
+
+-- 2. Questions à 4 choix (A, B, C, D) avec explication de la correction
+ALTER TABLE public.formation_questions ADD COLUMN IF NOT EXISTS option_d TEXT;
+ALTER TABLE public.formation_questions ADD COLUMN IF NOT EXISTS explication TEXT;
+ALTER TABLE public.formation_questions DROP CONSTRAINT IF EXISTS formation_questions_bonne_reponse_check;
+ALTER TABLE public.formation_questions ADD CONSTRAINT formation_questions_bonne_reponse_check CHECK (bonne_reponse IN ('a','b','c','d'));
+
+-- 3. Bilan personnel de l'apprenant (Acquis / En cours / À travailler)
+ALTER TABLE public.formation_module_progression ADD COLUMN IF NOT EXISTS bilan TEXT CHECK (bilan IN ('acquis','en_cours','a_travailler'));
+
+COMMIT;
+
 -- EDM · MÉDITATION DU JOUR — à exécuter une fois dans Supabase > SQL Editor
 CREATE TABLE IF NOT EXISTS public.meditations_du_jour (
   jour INT PRIMARY KEY,

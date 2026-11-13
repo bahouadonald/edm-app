@@ -1,26 +1,25 @@
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import type { Href } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import * as Haptics from 'expo-haptics';
+import { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { BrandHeader, Card, Heading, LoadingState, Notice, Screen } from '@/components/edm-ui';
+import { Badge, Card3D, HeroScreen, HeroTitle, ProgressBar } from '@/components/edm-3d';
 import { RequireAuth } from '@/components/require-auth';
 import { EDM, FORMATION_CARDS } from '@/constants/edm';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 
 type FormationKey = (typeof FORMATION_CARDS)[number]['key'];
-type CourseStats = { formation: number; saison: number; spirituel: number; modulesDone: number; weeksDone: number };
+type Stat = { total: number; done: number };
 
-const courseImages = {
-  formation: require('@/assets/images/slide-1.png'),
-  saison: require('@/assets/images/slide-4.png'),
-  spirituel: require('@/assets/images/slide-7.png'),
-} as const;
+const courseImages: Record<FormationKey, number> = {
+  formation: require('@/assets/images/illus/formation-1.png'),
+  saison: require('@/assets/images/illus/formation-2.png'),
+  spirituel: require('@/assets/images/illus/formation-3.png'),
+};
 
 export default function FormationsScreen() {
   return <RequireAuth><FormationsContent /></RequireAuth>;
@@ -28,8 +27,8 @@ export default function FormationsScreen() {
 
 function FormationsContent() {
   const { user } = useAuth();
-  const [stats, setStats] = useState<CourseStats>({ formation: 0, saison: 0, spirituel: 0, modulesDone: 0, weeksDone: 0 });
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<Record<FormationKey, Stat>>({ formation: { total: 0, done: 0 }, saison: { total: 0, done: 0 }, spirituel: { total: 0, done: 0 } });
+  const [weeksDone, setWeeksDone] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -37,92 +36,67 @@ function FormationsContent() {
     if (!user) return;
     let mounted = true;
     void Promise.all([
-      supabase.from('formation_modules').select('formation').eq('actif', true),
+      supabase.from('formation_modules').select('id,formation').eq('actif', true),
       supabase.from('formation_module_progression').select('module_id').eq('user_id', user.id).eq('quiz_reussi', true),
       supabase.from('formation_progression').select('semaine').eq('user_id', user.id).eq('validated', true),
-    ]).then(([modules, completedModules, completedWeeks]) => {
+    ]).then(([modules, completed, weeks]) => {
       if (!mounted) return;
-      const counts: CourseStats = { formation: 0, saison: 0, spirituel: 0, modulesDone: completedModules.data?.length ?? 0, weeksDone: completedWeeks.data?.length ?? 0 };
-      modules.data?.forEach(({ formation }) => {
-        if (formation === 'formation') counts.formation += 1;
-        else if (formation === 'saison') counts.saison += 1;
-        else if (formation === 'spirituel') counts.spirituel += 1;
+      const done = new Set((completed.data ?? []).map((item) => item.module_id));
+      const next: Record<FormationKey, Stat> = { formation: { total: 0, done: 0 }, saison: { total: 0, done: 0 }, spirituel: { total: 0, done: 0 } };
+      (modules.data ?? []).forEach(({ id, formation }) => {
+        const key = formation as FormationKey;
+        if (!next[key]) return;
+        next[key].total += 1;
+        if (done.has(id)) next[key].done += 1;
       });
-      setStats(counts);
-      setLoading(false);
+      setStats(next);
+      setWeeksDone(weeks.data?.length ?? 0);
       setRefreshing(false);
     });
     return () => { mounted = false; };
   }, [refreshKey, user]);
 
-  const openCourse = (key: FormationKey) => {
-    router.push({ pathname: '/formation/[formation]', params: { formation: key } } as unknown as Href);
+  const status = (key: FormationKey) => {
+    if (key === 'formation') return { text: `${weeksDone} / 7 semaines validées · ${stats.formation.done} / ${stats.formation.total || 35} modules`, ratio: stats.formation.total ? stats.formation.done / stats.formation.total : 0 };
+    if (key === 'spirituel') return { text: 'Manuel pratique · bientôt disponible', ratio: 0 };
+    const s = stats[key];
+    return { text: s.total ? `${s.done} module${s.done > 1 ? 's' : ''} validé${s.done > 1 ? 's' : ''} · ${s.total} au total` : 'Bientôt disponible', ratio: s.total ? s.done / s.total : 0 };
   };
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}>
-      <BrandHeader />
-      <Heading eyebrow="Parcours EDM" title="Les Formations EDM" subtitle="Suis les trois parcours dans l'ordre." />
-      <Text style={styles.intro}>
-        Une formation pratique qui transforme. Suis les trois parcours dans l&apos;ordre et deviens une élite charismatique engagée pour la cause du Seigneur, manifestant l&apos;autorité de Dieu sur la terre.
-      </Text>
-      {loading ? <LoadingState /> : FORMATION_CARDS.map((course, index) => {
-        const total = course.key === 'formation' ? 7 : stats[course.key];
-        const done = course.key === 'formation' ? stats.weeksDone : stats.modulesDone;
-        const ratio = total ? Math.min(done / total, 1) : 0;
+    <HeroScreen
+      refreshing={refreshing}
+      onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}
+      illustration={require('@/assets/images/illus/hero-formations.png')}
+      hero={<HeroTitle title="Formations" highlight="EDM" subtitle="Développe ta connaissance et marche avec Dieu. Suis les parcours dans l'ordre." />}>
+      {FORMATION_CARDS.map((course, index) => {
+        const s = status(course.key);
+        const locked = course.key === 'spirituel';
         return (
-          <Animated.View key={course.key} entering={FadeInDown.delay(index * 70).duration(300)}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                void Haptics.selectionAsync();
-                openCourse(course.key);
-              }}
-              style={({ pressed }) => [styles.coursePressable, pressed && styles.pressed]}>
-              <Card style={styles.courseCard}>
-                <Image source={courseImages[course.key]} style={styles.courseImage} contentFit="contain" />
-                <View style={styles.courseCopy}>
-                  <Text style={styles.courseEyebrow}>FORMATION {index + 1}</Text>
-                  <Text style={styles.courseTitle}>{course.title}</Text>
-                  <Text style={[styles.courseStatus, { color: course.color }]}>
-                    {course.key === 'formation'
-                      ? `${stats.weeksDone} / 7 semaines validées`
-                      : stats[course.key] > 0
-                        ? `${stats.modulesDone} modules validés · ${stats[course.key]} au total`
-                        : 'Bientôt disponible'}
-                  </Text>
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${ratio * 100}%`, backgroundColor: course.color }]} />
-                  </View>
-                </View>
-                <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} tintColor={course.color} size={19} />
-              </Card>
-            </Pressable>
+          <Animated.View key={course.key} entering={FadeInDown.delay(index * 80).duration(320)}>
+            <Card3D
+              style={styles.card}
+              onPress={locked ? undefined : () => router.push({ pathname: '/formation/[formation]', params: { formation: course.key } } as unknown as Href)}>
+              <Image source={courseImages[course.key]} style={styles.image} contentFit="cover" />
+              <View style={styles.copy}>
+                <Badge label={`FORMATION ${index + 1}`} />
+                <Text style={styles.title}>{course.title}</Text>
+                <Text style={styles.status}>{s.text}</Text>
+                {!locked ? <ProgressBar ratio={s.ratio} /> : null}
+              </View>
+              {!locked ? <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor={EDM.red} size={26} /> : null}
+            </Card3D>
           </Animated.View>
         );
       })}
-      <Notice>
-        <Text style={styles.noticeText}>
-          À l&apos;issue des trois formations, tu accèdes à la Formation en Discipulat réservée aux Cadres, et tu reçois ton certificat et ton badge d&apos;Élite Charismatique du Dieu Vivant.
-        </Text>
-      </Notice>
-      <Text style={styles.progressNote}>Progression enregistrée sur ton compte et partagée avec le site EDM.</Text>
-    </Screen>
+    </HeroScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  intro: { color: EDM.textSecondary, fontSize: 13, lineHeight: 21 },
-  coursePressable: { borderRadius: 16 },
-  courseCard: { flexDirection: 'row', alignItems: 'center', padding: 11, gap: 12 },
-  courseImage: { width: 78, height: 138, borderRadius: 9, backgroundColor: EDM.creamDark },
-  courseCopy: { flex: 1, gap: 6 },
-  courseEyebrow: { color: EDM.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  courseTitle: { color: EDM.text, fontSize: 14, fontWeight: '800', lineHeight: 19 },
-  courseStatus: { fontSize: 10, fontWeight: '700' },
-  progressTrack: { height: 5, overflow: 'hidden', borderRadius: 4, backgroundColor: EDM.creamDark, marginTop: 2 },
-  progressFill: { height: '100%', borderRadius: 4 },
-  noticeText: { color: EDM.textSecondary, fontSize: 12, lineHeight: 18 },
-  progressNote: { color: EDM.textMuted, fontSize: 11, textAlign: 'center' },
-  pressed: { opacity: 0.75 },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
+  image: { width: 118, height: 108, borderRadius: 16 },
+  copy: { flex: 1, gap: 5 },
+  title: { color: '#13235B', fontSize: 17, fontWeight: '900', lineHeight: 21 },
+  status: { color: EDM.textSecondary, fontSize: 12.5, fontWeight: '600' },
 });

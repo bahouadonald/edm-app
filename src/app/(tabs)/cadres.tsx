@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
-import { ActionButton, BrandHeader, Card, Heading, LoadingState, Notice, Screen } from '@/components/edm-ui';
+import { Image } from 'expo-image';
+
+import { Card3D, GlossyIcon, HeroScreen, HeroTitle, PrimaryButton, SectionTitle } from '@/components/edm-3d';
+import { Notice } from '@/components/edm-ui';
 import { RequireAuth } from '@/components/require-auth';
 import { DEPARTMENTS, departmentName, EDM } from '@/constants/edm';
 import { useAuth } from '@/contexts/auth-context';
@@ -62,26 +64,38 @@ function CadresContent() {
     setSaving(false);
   };
 
-  return (
-    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}>
-      <BrandHeader />
-      <Heading eyebrow="Parcours Disciples EDM" title="Formation des Cadres" />
-      <View style={styles.requirementHeading}>
-        <Text style={styles.eyebrow}>Prérequis obligatoires</Text>
-        <Text style={styles.requirementText}>Les 3 Formations EDM et la Formation en Discipulat</Text>
-      </View>
-      {loading ? <LoadingState /> : (
-        <View style={styles.statusRow}>
-          <SymbolView
-            name={{ ios: ready ? 'checkmark.circle.fill' : 'lock.fill', android: ready ? 'check_circle' : 'lock', web: ready ? 'check_circle' : 'lock' }}
-            tintColor={ready ? EDM.green : EDM.red}
-            size={24}
-          />
-          <Text style={styles.statusText}>{ready ? 'Prérequis validés' : 'Complète les formations pour continuer'}</Text>
-        </View>
-      )}
+  const deptImages: Record<string, number> = {
+    hallel: require('@/assets/images/illus/hallel.png'),
+    hatafa: require('@/assets/images/illus/hatafa.png'),
+    hafaka: require('@/assets/images/illus/hafaka.png'),
+    mimsad: require('@/assets/images/illus/mimsad.png'),
+  };
+  const deptColors: Record<string, readonly [string, string, string]> = {
+    hallel: ['#F7C948', '#E2A92B', '#B97E0C'],
+    hatafa: ['#E8344B', '#C8102E', '#8B0A1F'],
+    hafaka: ['#9B5CF6', '#7C3AED', '#5B21B6'],
+    mimsad: ['#2BB3A3', '#14917F', '#0B6B5E'],
+  };
 
-      <Text style={styles.eyebrow}>Nos Départements</Text>
+  return (
+    <HeroScreen
+      refreshing={refreshing}
+      onRefresh={() => { setRefreshing(true); setRefreshKey((key) => key + 1); }}
+      illustration={require('@/assets/images/illus/hero-cadres.png')}
+      hero={<HeroTitle title="Formations des" highlight="Cadres" subtitle="Développe tes compétences et sers efficacement dans le Royaume." />}>
+      <Card3D style={styles.requirement}>
+        <GlossyIcon
+          icon={ready ? { ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' } : { ios: 'list.clipboard.fill', android: 'assignment_turned_in', web: 'assignment_turned_in' }}
+          colors={ready ? ['#4CAF50', '#2E7D32', '#1B5E20'] : ['#E8344B', '#C8102E', '#8B0A1F']}
+          size={54}
+        />
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={styles.requirementTitle}>{loading ? 'Vérification...' : ready ? 'Prérequis validés' : 'Prérequis obligatoires'}</Text>
+          <Text style={styles.requirementText}>Les Formations EDM et la Formation en Discipulat doivent être complétées.</Text>
+        </View>
+      </Card3D>
+
+      <SectionTitle icon={{ ios: 'square.grid.2x2.fill', android: 'grid_view', web: 'grid_view' }} title="Nos départements" />
       <View style={styles.departments}>
         {DEPARTMENTS.map((department) => {
           const selected = selectedDepartment === department.id;
@@ -95,18 +109,17 @@ function CadresContent() {
                 void Haptics.selectionAsync();
                 setSelectedDepartment(department.id);
               }}
-              style={({ pressed }) => [
-                styles.departmentPressable,
-                selected && styles.departmentSelected,
-                pressed && styles.pressed,
-              ]}>
-              <Card style={styles.departmentCard}>
-                <View style={[styles.departmentIcon, { backgroundColor: selected ? EDM.red : EDM.creamDark }]}>
-                  <SymbolView name={{ ios: 'star.fill', android: department.icon, web: department.icon }} tintColor={selected ? EDM.white : EDM.gold} size={20} />
+              style={({ pressed }) => [styles.departmentSlot, pressed && styles.pressed]}>
+              <View style={[styles.departmentCard, selected && styles.departmentSelected]}>
+                <Image source={deptImages[department.id]} style={styles.departmentImage} contentFit="cover" />
+                <View style={styles.departmentBadge}>
+                  <GlossyIcon icon={{ ios: 'star.fill', android: department.icon, web: department.icon }} colors={deptColors[department.id]} size={36} />
                 </View>
-                <Text style={styles.departmentTitle}>{department.title}</Text>
-                <Text style={styles.departmentDescription}>{department.description}</Text>
-              </Card>
+                <View style={styles.departmentBody}>
+                  <Text style={styles.departmentTitle}><Text style={{ color: EDM.red }}>É</Text>{department.title.slice(1)}</Text>
+                  <Text style={styles.departmentDescription}>{department.description}</Text>
+                </View>
+              </View>
             </Pressable>
           );
         })}
@@ -123,35 +136,39 @@ function CadresContent() {
       ) : ready ? (
         <>
           {error ? <Notice tone="red"><Text style={styles.noticeText}>{error}</Text></Notice> : null}
-          <ActionButton
-            label={saving ? 'Envoi...' : 'Confirmer mon choix de département'}
+          <PrimaryButton
+            label={saving ? 'Envoi...' : 'Confirmer mon département'}
+            icon={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
             onPress={() => void submitDepartment()}
             disabled={!selectedDepartment || saving}
           />
         </>
       ) : (
-        <Card>
-          <Text style={styles.cardText}>Complète les formations et les questionnaires pour demander à rejoindre un département et devenir Cadre.</Text>
-        </Card>
+        <Card3D style={styles.requirement}>
+          <GlossyIcon icon={{ ios: 'scope', android: 'track_changes', web: 'track_changes' }} colors={['#E8344B', '#C8102E', '#8B0A1F']} size={48} />
+          <Text style={[styles.requirementText, { flex: 1 }]}>Complète les formations et les questionnaires pour demander à rejoindre un département et devenir Cadre.</Text>
+        </Card3D>
       )}
-    </Screen>
+    </HeroScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  requirementHeading: { gap: 6 },
-  eyebrow: { color: EDM.red, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' },
-  requirementText: { color: EDM.textSecondary, fontSize: 13, lineHeight: 20 },
-  statusRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, borderRadius: 12, backgroundColor: EDM.white },
-  statusText: { flex: 1, color: EDM.text, fontSize: 13, fontWeight: '700' },
-  departments: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  departmentPressable: { width: '48%', borderRadius: 14 },
-  departmentSelected: { borderColor: EDM.red, borderRadius: 14, borderWidth: 2 },
-  departmentCard: { flex: 1, padding: 12 },
-  departmentIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 11 },
-  departmentTitle: { color: EDM.text, fontSize: 12, fontWeight: '800' },
-  departmentDescription: { color: EDM.textMuted, fontSize: 10, lineHeight: 15 },
-  pressed: { opacity: 0.75 },
-  noticeText: { color: EDM.textSecondary, fontSize: 12, lineHeight: 19 },
-  cardText: { color: EDM.textSecondary, fontSize: 12, lineHeight: 19 },
+  requirement: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  requirementTitle: { color: EDM.text, fontSize: 17, fontWeight: '900' },
+  requirementText: { color: EDM.textSecondary, fontSize: 13.5, lineHeight: 19 },
+  departments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 14 },
+  departmentSlot: { width: '48%' },
+  departmentCard: {
+    backgroundColor: EDM.white, borderRadius: 20, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent',
+    shadowColor: '#7A2E1A', shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5,
+  },
+  departmentSelected: { borderColor: EDM.red },
+  departmentImage: { width: '100%', height: 92 },
+  departmentBadge: { position: 'absolute', top: 70, left: 10 },
+  departmentBody: { padding: 12, paddingTop: 18, gap: 3 },
+  departmentTitle: { color: EDM.text, fontSize: 15.5, fontWeight: '900' },
+  departmentDescription: { color: EDM.textSecondary, fontSize: 12.5, lineHeight: 17 },
+  pressed: { opacity: 0.85, transform: [{ scale: 0.985 }] },
+  noticeText: { color: EDM.textSecondary, fontSize: 13, lineHeight: 19 },
 });

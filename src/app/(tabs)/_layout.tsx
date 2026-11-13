@@ -19,18 +19,30 @@ export default function TabLayout() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: EDM.red,
-        tabBarInactiveTintColor: EDM.textMuted,
+        tabBarInactiveTintColor: '#7A4A2A',
         tabBarStyle: {
+          position: 'absolute',
+          left: 12,
+          right: 12,
+          bottom: Platform.OS === 'ios' ? 18 : 10,
+          height: 68,
+          borderRadius: 26,
           backgroundColor: EDM.white,
-          borderTopColor: EDM.border,
-          paddingTop: 6,
-          paddingBottom: Platform.OS === 'ios' ? 4 : 7,
+          borderTopWidth: 0,
+          paddingTop: 8,
+          paddingBottom: 8,
+          shadowColor: '#7A2E1A',
+          shadowOpacity: 0.18,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 12,
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: 1 },
+        tabBarLabelStyle: { fontSize: 11.5, fontWeight: '800', marginTop: 2 },
         tabBarIcon: ({ color, size, focused }) => (
           <View style={{ width: 30, height: 28, alignItems: 'center', justifyContent: 'flex-end' }}>
-            {focused ? <View style={{ position: 'absolute', top: -7, width: 20, height: 3, borderRadius: 2, backgroundColor: EDM.red }} /> : null}
+            
             <SymbolView name={tabIcons[route.name as keyof typeof tabIcons]} tintColor={color} size={size} />
+            {focused ? <View style={{ position: 'absolute', bottom: -30, width: 46, height: 4, borderRadius: 2, backgroundColor: EDM.red }} /> : null}
           </View>
         ),
       })}>
